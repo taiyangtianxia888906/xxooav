@@ -1,0 +1,235 @@
+<?php
+if (isset($_GET["export"]) && $_GET["export"] == "csv") {
+    $stmt = $pdo->query("SELECT id, username, view_key, created_at FROM promoters ORDER BY id DESC");
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    header("Content-Type: text/csv; charset=utf-8");
+    header("Content-Disposition: attachment; filename=promoters_list.csv");
+    $output = fopen("php://output", "w");
+    fputcsv($output, ["ID", "用户名", "邀请码", "创建时间"]);
+    foreach ($rows as $row) fputcsv($output, $row);
+    fclose($output);
+    exit;
+}
+require 'header.php';
+
+// 处理添加推广员
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    if ($_POST['action'] === 'add') {
+        $username = trim($_POST['username'] ?? '');
+        $password = $_POST['password'] ?? '';
+        $view_key = trim($_POST['view_key'] ?? '');
+        $error = '';
+        
+        if (empty($username) || empty($password)) {
+            $error = "用户名和密码不能为空";
+        } else {
+            // 检查用户名是否已存在
+            $stmt = $pdo->prepare("SELECT id FROM promoters WHERE username = ?");
+            $stmt->execute([$username]);
+            if ($stmt->fetch()) {
+                $error = "用户名已存在";
+            } elseif (!empty($view_key)) {
+                // 检查邀请码是否已存在
+                $stmt = $pdo->prepare("SELECT id FROM promoters WHERE view_key = ?");
+                $stmt->execute([$view_key]);
+                if ($stmt->fetch()) {
+                    $error = "邀请码已被使用";
+                }
+            }
+        }
+        
+        if (empty($error)) {
+            $hash = password_hash($password, PASSWORD_DEFAULT);
+            if (empty($view_key)) {
+                // 自动生成邀请码：用户名+4位随机
+                $view_key = $username . '_' . substr(md5(uniqid()), 0, 4);
+            }
+            $stmt = $pdo->prepare("INSERT INTO promoters (username, password, view_key, created_at) VALUES (?, ?, ?, NOW())");
+            $stmt->execute([$username, $hash, $view_key]);
+            $new_id = $pdo->lastInsertId();
+            $success = "推广员已添加，邀请码：$view_key";
+            // 可选：自动跳转到推广员后台
+            // header("Location: /promoter/login.php?new_id=$new_id");
+        }
+    } elseif ($_POST['action'] === 'delete') {
+        $id = intval($_POST['id'] ?? 0);
+        if ($id) {
+            $pdo->prepare("DELETE FROM promoters WHERE id = ?")->execute([$id]);
+            $success = "已删除";
+        }
+    }
+}
+
+// 获取所有推广员
+$promoters = $pdo->query("SELECT * FROM promoters ORDER BY id DESC")->fetchAll();
+
+// 获取单个推广员统计数据（用于详情弹窗）
+$detail_data = null;
+if (isset($_GET['detail_id'])) {
+    $detail_id = intval($_GET['detail_id']);
+    $stmt = $pdo->prepare("
+        SELECT 
+            p.*,
+            (SELECT COUNT(*) FROM shares WHERE view_key = p.view_key) as shares,
+            (SELECT COUNT(*) FROM ad_clicks WHERE share_code = p.view_key) as ad_clicks,
+            (SELECT COUNT(*) FROM visit_logs WHERE share_code = p.view_key) as visits,
+            (SELECT COUNT(*) FROM video_views WHERE video_id IN (SELECT item_id FROM shares WHERE view_key = p.view_key AND type='video')) as video_views
+        FROM promoters p
+        WHERE p.id = ?
+    ");
+    $stmt->execute([$detail_id]);
+    $detail_data = $stmt->fetch();
+    header('Content-Type: application/json');
+    echo json_encode($detail_data);
+    exit;
+}
+?>
+<style>
+    .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); }
+    .modal-content { background-color: #1e1e1e; margin: 10% auto; padding: 20px; border-radius: 8px; width: 400px; max-width: 90%; color: #fff; }
+    .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
+    .close:hover { color: #f90; }
+    .stats-table td { padding: 6px 12px; }
+</style>
+<h2 class="page-title">👥 推广员管理</h2>
+<?php if (isset($success)): ?><div class="alert alert-success"><?= htmlspecialchars($success) ?></div><?php endif; ?>
+if (isset($_GET["export"]) && $_GET["export"] == "csv") {
+    $stmt = $pdo->query("SELECT id, username, view_key, created_at FROM promoters ORDER BY id DESC");
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    header("Content-Type: text/csv; charset=utf-8");
+    header("Content-Disposition: attachment; filename=promoters_list.csv");
+    $output = fopen("php://output", "w");
+    fputcsv($output, ["ID", "用户名", "邀请码", "创建时间"]);
+    foreach ($rows as $row) fputcsv($output, $row);
+    fclose($output);
+    exit;
+}
+<?php if (isset($error)): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
+if (isset($_GET["export"]) && $_GET["export"] == "csv") {
+    $stmt = $pdo->query("SELECT id, username, view_key, created_at FROM promoters ORDER BY id DESC");
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    header("Content-Type: text/csv; charset=utf-8");
+    header("Content-Disposition: attachment; filename=promoters_list.csv");
+    $output = fopen("php://output", "w");
+    fputcsv($output, ["ID", "用户名", "邀请码", "创建时间"]);
+    foreach ($rows as $row) fputcsv($output, $row);
+    fclose($output);
+    exit;
+}
+
+<div class="card">
+<a href="?export=csv" class="btn btn-primary" style="margin-bottom:15px; background-color:#28a745;">📥 导出 CSV</a>
+    <button id="addPromoterBtn" class="btn btn-primary" style="margin-bottom:15px;">➕ 添加推广员</button>
+    
+    <table class="table">
+        <thead>
+            <tr><th>ID</th><th>用户名</th><th>邀请码</th><th>创建时间</th><th>操作</th></tr>
+        </thead>
+        <tbody>
+            <?php foreach ($promoters as $p): ?>
+            <tr>
+                <td><?= $p['id'] ?></td>
+                <td><?= htmlspecialchars($p['username']) ?></td>
+                <td><code><?= htmlspecialchars($p['view_key'] ?? '') ?></code></td>
+                <td><?= $p['created_at'] ?></td>
+                <td>
+                    <button class="btn btn-sm btn-primary view-stats" data-id="<?= $p['id'] ?>">📊 数据详情</button>
+                    <form method="post" style="display:inline;">
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="id" value="<?= $p['id'] ?>">
+                        <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('确认删除？')">删除</button>
+                    </form>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
+</div>
+
+<!-- 添加推广员的模态框 -->
+<div id="addModal" class="modal">
+    <div class="modal-content">
+        <span class="close">&times;</span>
+        <h3 style="color:#f90;">➕ 添加推广员</h3>
+        <form method="post" id="addForm">
+            <input type="hidden" name="action" value="add">
+            <div style="margin-bottom:12px;">
+                <label>账号</label>
+                <input type="text" name="username" class="form-inp" required>
+            </div>
+            <div style="margin-bottom:12px;">
+                <label>密码</label>
+                <input type="password" name="password" class="form-inp" required>
+            </div>
+            <div style="margin-bottom:12px;">
+                <label>邀请码（留空自动生成）</label>
+                <input type="text" name="view_key" class="form-inp" placeholder="可选，6-8位字母数字">
+            </div>
+            <button type="submit" class="btn btn-primary">确认添加</button>
+        </form>
+    </div>
+</div>
+
+<!-- 数据详情模态框 -->
+<div id="statsModal" class="modal">
+    <div class="modal-content">
+        <span class="close-stats">&times;</span>
+        <h3 style="color:#f90;">📊 推广员数据详情</h3>
+        <div id="statsContent">加载中...</div>
+        <button class="btn btn-sm" onclick="window.location.href='/promoter/login.php'">🔐 推广员登录后台</button>
+    </div>
+</div>
+
+<script>
+    // 添加弹窗
+    var modal = document.getElementById("addModal");
+    var btn = document.getElementById("addPromoterBtn");
+    var span = document.getElementsByClassName("close")[0];
+    btn.onclick = function() { modal.style.display = "block"; }
+    span.onclick = function() { modal.style.display = "none"; }
+    window.onclick = function(event) { if (event.target == modal) modal.style.display = "none"; }
+
+    // 数据详情弹窗
+    var statsModal = document.getElementById("statsModal");
+    var closeStats = document.getElementsByClassName("close-stats")[0];
+    closeStats.onclick = function() { statsModal.style.display = "none"; }
+    window.onclick = function(event) { if (event.target == statsModal) statsModal.style.display = "none"; }
+
+    document.querySelectorAll('.view-stats').forEach(btn => {
+        btn.addEventListener('click', function() {
+            var id = this.getAttribute('data-id');
+            fetch('?detail_id=' + id)
+                .then(res => res.json())
+                .then(data => {
+                    var html = `
+                        <table class="stats-table">
+                            <tr><td>用户名：</td><td>${data.username}</td></tr>
+                            <tr><td>邀请码：</td><td><code>${data.view_key}</code></td></tr>
+                            <tr><td>总分享数：</td><td>${data.shares || 0}</td></tr>
+                            <tr><td>总广告点击：</td><td>${data.ad_clicks || 0}</td></tr>
+                            <tr><td>总访问量：</td><td>${data.visits || 0}</td></tr>
+                            <tr><td>视频观看次数：</td><td>${data.video_views || 0}</td></tr>
+                            <tr><td>注册时间：</td><td>${data.created_at}</td></tr>
+                        </table>
+                        <br>
+                        <a href="/promoter/login.php" class="btn btn-primary">🔐 推广员登录后台</a>
+                    `;
+                    document.getElementById('statsContent').innerHTML = html;
+                    statsModal.style.display = "block";
+                })
+                .catch(err => { alert("加载失败"); });
+        });
+    });
+</script>
+<?php require 'footer.php'; ?>
+if (isset($_GET["export"]) && $_GET["export"] == "csv") {
+    $stmt = $pdo->query("SELECT id, username, view_key, created_at FROM promoters ORDER BY id DESC");
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    header("Content-Type: text/csv; charset=utf-8");
+    header("Content-Disposition: attachment; filename=promoters_list.csv");
+    $output = fopen("php://output", "w");
+    fputcsv($output, ["ID", "用户名", "邀请码", "创建时间"]);
+    foreach ($rows as $row) fputcsv($output, $row);
+    fclose($output);
+    exit;
+}

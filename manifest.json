@@ -1,0 +1,13 @@
+{
+  "name": "xxoo免费成人视频",
+  "short_name": "xxoo",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#f90",
+  "icons": [{
+    "src": "/uploads/logo.png",
+    "sizes": "192x192",
+    "type": "image/png"
+  }]
+}
